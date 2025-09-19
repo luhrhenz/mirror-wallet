@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard | Mirror Wallet</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.9.0/dist/ethers.umd.min.js"></script>
+  <script src="qrcode.min.js"></script>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="black-box">
+      <div class="logo-dropdown" id="logoMenu">
+        <img src="mirr.png" alt="Mirror Logo">
+        <h2>MIRROR</h2>
+      </div>
+      <!-- Dropdown Menu -->
+      <div class="dropdown" id="dropdownMenu">
+        <ul>
+          <li>User ID: <span id="dropdownUserId"></span></li>
+          <hr>
+          <li onclick="window.location.href='settings.html'">Settings</li>
+          <li>Help</li>
+          <li id="logoutLink">Logout</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Balance Header -->
+    <div class="balance-header">
+      <div style="text-align: right; padding: 10px 20px;">
+        <div class="balance-box" id="balance">0.00 ETH</div>
+      </div>
+    </div>
+
+    <!-- Dashboard Content -->
+    <div class="dashboard-content">
+      <h1>Dashboard</h1>
+      <p id="welcome" class="welcome">Welcome back!</p>
+
+      <!-- Wallet Section -->
+      <div class="wallet-section">
+        <div class="wallet-info">
+          <span class="username" id="username"></span>
+          <div class="address-box" id="walletAddress"></div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="actions">
+        <button class="action-btn" id="openSendBtn">Send</button>
+        <button class="action-btn" id="receiveBtn">Receive</button>
+      </div>
+
+      <!-- Transactions -->
+      <div class="transactions">
+        <h3>Recent Transactions</h3>
+        <ul id="transactionsList">
+          <li>No transactions yet.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- 🔹 Send Modal -->
+    <div class="modal" id="sendModal"> 
+      <div class="modal-content">
+        <h2>Send ETH</h2>
+        <label>Recipient Address</label>
+        <input type="text" id="recipient" placeholder="0x123..."> 
+        <label>Amount (ETH)</label>
+        <input type="number" id="amount" placeholder="0.01" step="0.001" min="0">
+        <div class="modal-actions">
+          <button id="sendTxBtn">Send</button>
+          <button onclick="closeModal('sendModal')">Cancel</button>
+        </div> 
+        <p id="sendStatus"></p>
+      </div> 
+    </div>
+
+    <!-- 🔹 Receive Modal -->
+    <div id="receiveModal" class="modal">
+      <div class="modal-content">
+        <h2>Receive</h2>
+        <div id="fullWalletAddress"></div>
+        <button id="copyAddressBtn" class="copy-btn">Copy Address</button>
+        <div id="qrcode"></div>
+        <div class="modal-actions">
+          <button onclick="closeModal('receiveModal')">Close</button>
+        </div>
+      </div>
+    </div>
+  
+  
+    <!-- 🔹 Full Transactions Modal -->
+    <div id="transactionsModal" class="modal">
+      <div class="modal-content">
+        <span class="modal-close" onclick="closeModal('transactionsModal')">&times;</span>
+        <h2>Full Transaction History</h2>
+        <ul id="fullTransactionsList" style="max-height: 400px; overflow-y: auto;"></ul>
+        <div class="modal-actions">
+          <button onclick="closeModal('transactionsModal')">Close</button>
+        </div>
+      </div>
+    </div>
+  
+    <!-- Toast Notification -->
+    <div id="toast"></div>
+  </div>
+
+  <script>
+    // ✅ Check login
+    if (!localStorage.getItem("username") || !localStorage.getItem("walletAddress")) {
+      window.location.href = "login.html";
+    }
+
+    // ✅ Populate user info
+    document.getElementById("welcome").textContent = `Welcome back, ${localStorage.getItem("username")}!`;
+    document.getElementById("username").textContent = localStorage.getItem("username");
+    document.getElementById("dropdownUserId").textContent = localStorage.getItem("userId");
+    document.getElementById("walletAddress").textContent = localStorage.getItem("walletAddress");
+    document.getElementById("fullWalletAddress").textContent = localStorage.getItem("walletAddress");
+  
+  // ✅ Initialize Ethereum provider and fetch data
+  const address = localStorage.getItem("walletAddress");
+  const provider = new ethers.JsonRpcProvider("https://eth.llamarpc.com");
+  
+  // Fetch and update balance
+  provider.getBalance(address).then((balance) => {
+    const eth = parseFloat(ethers.formatEther(balance));
+    document.getElementById("balance").textContent = `${eth.toFixed(4)} ETH`;
+  }).catch((err) => {
+    console.error("Balance fetch error:", err);
+    document.getElementById("balance").textContent = "Error fetching balance";
+  });
+  
+  // Function to fetch transactions from Etherscan
+  async function fetchTransactions(addr, limit = 5) {
+    try {
+      const response = await fetch(
+        `https://api.etherscan.io/api?module=account&action=txlist&address=${addr}&startblock=0&endblock=99999999&page=1&offset=${limit}&sort=desc`
+      );
+      const data = await response.json();
+      if (data.status === "1") {
+        return data.result;
+      } else {
+        console.error("Etherscan error:", data.message);
+        return [];
+      }
+    } catch (err) {
+      console.error("Fetch transactions error:", err);
+      return [];
+    }
+  }
+  
+  // Function to render transaction list
+  function renderTransactions(txs, containerId) {
+    const container = document.getElementById(containerId);
+    if (txs.length === 0) {
+      container.innerHTML = "<li>No transactions found.</li>";
+      return;
+    }
+    container.innerHTML = txs
+      .map(
+        (tx) => `
+          <li style="border-bottom: 1px solid #eee; padding: 10px 0;">
+            <div><strong>Hash:</strong> ${tx.hash.slice(0, 10)}...</div>
+            <div><strong>From:</strong> ${tx.from.slice(0, 8)}...</div>
+            <div><strong>To:</strong> ${tx.to ? tx.to.slice(0, 8) + "..." : "Contract Creation"}</div>
+            <div><strong>Value:</strong> ${(parseInt(tx.value) / 1e18).toFixed(4)} ETH</div>
+            <div><strong>Gas Used:</strong> ${tx.gasUsed}</div>
+            <div><strong>Date:</strong> ${new Date(parseInt(tx.timeStamp) * 1000).toLocaleString()}</div>
+          </li>
+        `
+      )
+      .join("");
+  }
+  
+  // Fetch and display recent transactions on load
+  fetchTransactions(address, 5).then((txs) => {
+    renderTransactions(txs, "transactionsList");
+  });
+  
+  // Make transactions section clickable
+  const transactionsSection = document.querySelector(".transactions");
+  transactionsSection.style.cursor = "pointer";
+  transactionsSection.addEventListener("click", async () => {
+    document.getElementById("transactionsModal").style.setProperty("display", "flex", "important");
+    fetchTransactions(address, 20).then((txs) => {
+      renderTransactions(txs, "fullTransactionsList");
+    });
+  });
+  
+  // ✅ Logout
+  document.getElementById("logoutLink").addEventListener("click", () => {
+    localStorage.clear();
+    window.location.href = "login.html";
+  });
+
+    // ✅ Open Send Modal
+    document.getElementById("openSendBtn").addEventListener("click", () => {
+      document.getElementById("sendModal").style.setProperty("display", "flex", "important");
+    });
+
+    // ✅ Open Receive Modal
+    document.getElementById("receiveBtn").addEventListener("click", () => {
+      const modal = document.getElementById("receiveModal");
+      const qrContainer = document.getElementById('qrcode');
+      const address = localStorage.getItem("walletAddress");
+
+      if (!address) {
+        qrContainer.innerHTML = '<p style="color: #ff6b6b;">No wallet address found. Please login again.</p>';
+        modal.style.setProperty("display", "flex", "important");
+        return;
+      }
+
+      modal.style.setProperty("display", "flex", "important");
+
+      // Clear previous QR
+      qrContainer.innerHTML = '';
+
+      // Generate QR code using local qrcodejs library
+      try {
+        if (typeof QRCode !== 'undefined') {
+          new QRCode(qrContainer, {
+            text: address,
+            width: 200,
+            height: 200,
+            colorDark: "#000000",
+            colorLight: "#FFFFFF",
+            correctLevel: QRCode.CorrectLevel.H
+          });
+          console.log('QR Code generated successfully');
+        } else {
+          throw new Error('QRCode library not loaded');
+        }
+      } catch (err) {
+        console.error('QR Code error:', err);
+        qrContainer.innerHTML = '<p style="color: #ff6b6b;">Failed to generate QR code.</p><div style="background: #fff; color: #000; padding: 10px; border-radius: 5px; word-break: break-all; font-family: monospace;">' + address + '</div><p style="color: #ccc; font-size: 0.8rem;">Copy or scan manually.</p>';
+      }
+    });
+
+    // ✅ Copy Wallet Address
+    document.getElementById("copyAddressBtn").addEventListener("click", () => {
+      navigator.clipboard.writeText(localStorage.getItem("walletAddress"));
+      showToast("Address copied!");
+    });
+
+    // ✅ Close Modal function
+    function closeModal(modalId) {
+      document.getElementById(modalId).style.setProperty("display", "none", "important");
+    }
+
+    // ✅ Dropdown toggle
+    document.getElementById("logoMenu").addEventListener("click", (e) => {
+      e.stopPropagation();
+      document.getElementById("dropdownMenu").classList.toggle("active");
+    });
+
+    // Close dropdown on outside click
+    document.addEventListener("click", () => {
+      document.getElementById("dropdownMenu").classList.remove("active");
+    });
+
+
+    // ✅ Toast
+    function showToast(message) {
+      const toast = document.getElementById("toast");
+      toast.textContent = message;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 3000);
+    }
+  </script>
+</body>
+</html>
+

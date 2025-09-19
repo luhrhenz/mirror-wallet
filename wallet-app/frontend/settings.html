@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings | Mirror Wallet</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.9.0/dist/ethers.umd.min.js"></script>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="black-box">
+      <div class="logo-dropdown" id="logoMenu">
+        <img src="mirr.png" alt="Mirror Logo">
+        <h2>MIRROR</h2>
+      </div>
+      <!-- Dropdown Menu -->
+      <div class="dropdown" id="dropdownMenu">
+        <ul>
+          <li>User ID: <span id="dropdownUserId"></span></li>
+          <hr>
+          <li onclick="window.location.href='dashboard.html'">Dashboard</li>
+          <li>Help</li>
+          <li id="logoutLink">Logout</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Settings Content -->
+    <div class="dashboard-content">
+      <h1>Settings</h1>
+      <p>Welcome to settings.</p>
+
+      <!-- Reveal Passphrase Section -->
+      <div class="wallet-section">
+        <h3>Wallet Security</h3>
+        <button id="revealPhraseBtn" class="action-btn">Reveal Passphrase</button>
+        <p>⚠️ Only reveal your recovery phrase when necessary. Write it down securely.</p>
+      </div>
+    </div>
+
+    <!-- 🔹 Passphrase Modal -->
+    <div class="modal" id="phraseModal">
+      <div class="modal-content">
+        <span class="modal-close" onclick="closeModal('phraseModal')">&times;</span>
+        <h2>Confirm Password</h2>
+        <input type="password" id="confirmPassword" placeholder="Enter password" />
+        <button id="confirmPasswordBtn">Confirm</button>
+        <p id="phraseOutput" style="margin-top:15px; color:#4ade80;"></p>
+      </div>  
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast"></div>
+  </div>
+
+  <script>
+    // ✅ Check login
+    if (!localStorage.getItem("username") || !localStorage.getItem("walletAddress")) {
+      window.location.href = "login.html";
+    }
+
+    // ✅ Populate user info
+    document.getElementById("dropdownUserId").textContent = localStorage.getItem("userId");
+
+    // ✅ Logout
+    document.getElementById("logoutLink").addEventListener("click", () => {
+      localStorage.clear();
+      window.location.href = "login.html";
+    });
+
+    // ✅ Close Modal function
+    function closeModal(modalId) {
+      document.getElementById(modalId).style.setProperty("display", "none", "important");
+    }
+
+    // ✅ Dropdown toggle
+    document.getElementById("logoMenu").addEventListener("click", (e) => {
+      e.stopPropagation();
+      document.getElementById("dropdownMenu").classList.toggle("active");
+    });
+
+    // Close dropdown on outside click
+    document.addEventListener("click", () => {
+      document.getElementById("dropdownMenu").classList.remove("active");
+    });
+
+    // ✅ Reveal Passphrase
+    document.getElementById("revealPhraseBtn").addEventListener("click", () => {
+      document.getElementById("phraseModal").style.setProperty("display", "flex", "important");
+    });
+
+    document.getElementById("confirmPasswordBtn").addEventListener("click", async () => {
+      const password = document.getElementById("confirmPassword").value;
+      const username = localStorage.getItem("username");
+      if (!username || !password) {
+        alert("Username or password missing. Please re-login.");
+        return;
+      }
+
+      try {
+        // Fetch keystore from backend
+        const response = await fetch("http://localhost:3000/get-keystore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          alert(data.error || "Failed to verify password. Try again.");
+          return;
+        }
+
+        // Decrypt keystore to get wallet and derive passphrase
+        const wallet = await ethers.Wallet.fromEncryptedJson(data.keystore, password);
+        const phrase = wallet.mnemonic.phrase;
+
+        document.getElementById("phraseOutput").innerHTML = `<strong>Recovery Phrase:</strong><br>${phrase}`;
+        document.getElementById("phraseOutput").style.color = "#4ade80";
+
+      } catch (err) {
+        console.error("Reveal passphrase error:", err);
+        alert("Incorrect password or server error. Try again.");
+      }
+    });
+
+    // ✅ Toast
+    function showToast(message) {
+      const toast = document.getElementById("toast");
+      toast.textContent = message;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 3000);
+    }
+  </script>
+</body>
+</html>

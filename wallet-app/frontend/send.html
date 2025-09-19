@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Send ETH</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.9.0/dist/ethers.umd.min.js"></script>
+  <link rel="stylesheet" href="send.css">
+</head>
+<body>
+  <div class="container">
+    <div class="black-box">
+      <div class="logo-dropdown" onclick="toggleDropdown()">
+        <img src="mirr.png" alt="">
+        <h2>MIRROR</h2>
+      </div>
+      <div class="dropdown" id="dropdownMenu">
+        <ul>
+          <li onclick="closeDropdown()">Dashboard</li>
+          <li onclick="closeDropdown()">Profile</li>
+          <li onclick="closeDropdown()">Settings</li>
+          <li onclick="closeDropdown()">Help</li>
+          <li onclick="logout()">Logout</li>
+        </ul>
+      </div>
+    </div>
+    <div class="send-content">
+      <h1>Send ETH</h1>
+      <p>Your wallet address: <span id="walletAddress"></span></p>
+      <form id="sendForm">
+        <input type="text" id="recipient" placeholder="Recipient Address" required>
+        <input type="number" id="amount" placeholder="Amount (ETH)" step="0.0001" required>
+        <input type="number" id="gasPrice" placeholder="Gas Price (Gwei)" step="0.1" value="20" required>
+        <input type="password" id="password" placeholder="Password" required>
+        <button type="submit">Send ETH</button>
+      </form>
+      <div id="status"></div>
+    </div>
+  </div>
+  <script>
+    // Load wallet address
+    const walletAddress = localStorage.getItem("walletAddress");
+    if (!walletAddress) {
+      alert("No wallet found. Please log in.");
+      window.location.href = "login.html";
+    }
+    document.getElementById("walletAddress").textContent = `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
+
+    // Dropdown functions
+    function toggleDropdown() {
+      const dropdown = document.getElementById("dropdownMenu");
+      dropdown.classList.toggle("active");
+    }
+
+    function closeDropdown() {
+      const dropdown = document.getElementById("dropdownMenu");
+      dropdown.classList.remove("active");
+    }
+
+    document.addEventListener("click", function(event) {
+      const dropdown = document.getElementById("dropdownMenu");
+      const logo = document.querySelector(".logo-dropdown");
+      if (!logo.contains(event.target) && !dropdown.contains(event.target)) {
+        dropdown.classList.remove("active");
+      }
+    });
+
+    function logout() {
+      localStorage.removeItem("username");
+      localStorage.removeItem("userId");
+      localStorage.removeItem("walletAddress");
+      window.location.href = "signup.html";
+    }
+
+    // Send form
+    document.getElementById("sendForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const recipient = document.getElementById("recipient").value.trim();
+      const amount = document.getElementById("amount").value;
+      const gasPrice = document.getElementById("gasPrice").value;
+      const password = document.getElementById("password").value;
+      const status = document.getElementById("status");
+
+      status.textContent = "Sending...";
+      status.style.color = "yellow";
+
+      try {
+        // Get keystore
+        const response = await fetch("http://localhost:3000/get-keystore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: localStorage.getItem("username"), password })
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to get keystore");
+        }
+
+        // Decrypt wallet
+        const wallet = await ethers.Wallet.fromEncryptedJson(data.keystore, password);
+
+        // Create provider and connect wallet
+        const provider = ethers.getDefaultProvider("mainnet");
+        const signer = wallet.connect(provider);
+
+        // Prepare transaction
+        const tx = await signer.sendTransaction({
+          to: recipient,
+          value: ethers.parseEther(amount),
+          gasPrice: ethers.parseUnits(gasPrice, "gwei")
+        });
+
+        status.textContent = "Transaction sent! Hash: " + tx.hash;
+        status.style.color = "green";
+
+        // Wait for confirmation
+        await tx.wait();
+        status.textContent = "Transaction confirmed! Hash: " + tx.hash;
+
+        // Update balance on dashboard if needed
+        window.location.href = "dashboard.html";
+      } catch (err) {
+        console.error("Send error:", err);
+        status.textContent = "Error: " + err.message;
+        status.style.color = "red";
+      }
+    });
+  </script>
+</body>
+</html>

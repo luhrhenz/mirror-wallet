@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Import Wallet</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.9.0/dist/ethers.umd.min.js"></script>
+  <link rel="stylesheet" href="import.css">
+</head>
+<body>
+  <div class="container">
+    <div class="black-box">
+      <img src="mirr.png" alt="">
+      <h2>MIRROR</h2>
+    </div>
+    <div class="login-form">
+      <h1>Import Existing Wallet</h1>
+      <p>Enter your 12-word recovery phrase to import your wallet.</p>
+      <form id="importForm">
+        <textarea id="passphrase" placeholder="Enter your 12-word recovery phrase..." required rows="4"></textarea>
+        <input type="text" id="username" placeholder="Username" required>
+        <input type="password" id="password" placeholder="Password" required>
+        <input type="password" id="confirmPassword" placeholder="Confirm Password" required>
+        <div class="checkbox-row">
+          <p>
+            <input type="checkbox" id="agree" required>
+            <label for="agree">I agree to the <a href="#">terms and conditions</a></label>
+          </p>
+        </div>
+        <button type="submit">Import and Login</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById("importForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const passphrase = document.getElementById("passphrase").value.trim();
+      const username = document.getElementById("username").value;
+      const password = document.getElementById("password").value;
+      const confirmPassword = document.getElementById("confirmPassword").value;
+      const agree = document.getElementById("agree").checked;
+
+      if (!passphrase) {
+        alert("Please enter your recovery phrase.");
+        return;
+      }
+      if (!username || !password || !confirmPassword) {
+        alert("Please fill in all fields.");
+        return;
+      }
+      if (password !== confirmPassword) {
+        alert("Passwords do not match.");
+        return;
+      }
+      if (!agree) {
+        alert("Please agree to the terms and conditions.");
+        return;
+      }
+
+      try {
+        // Create wallet from phrase
+        const wallet = ethers.Wallet.fromPhrase(passphrase);
+
+        // Encrypt wallet with password
+        const newKeystore = await wallet.encrypt(password);
+
+        // Send to backend for import
+        const response = await fetch("http://localhost:3000/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password, newKeystore })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          localStorage.setItem("username", data.username);
+          localStorage.setItem("userId", data.userId.toString());
+          localStorage.setItem("walletAddress", wallet.address);
+          alert("Wallet imported successfully! Redirecting to dashboard...");
+          window.location.href = "dashboard.html";
+        } else {
+          alert(data.error || "Import failed.");
+        }
+      } catch (err) {
+        console.error("Import error:", err);
+        alert("Invalid recovery phrase or network error. Please check and try again.");
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,142 @@
+ 
+body { 
+    margin: 10rem auto;
+    font-family: Arial; 
+    text-align: center; 
+    background: black; 
+    color: white;
+}
+.grid {
+     display: grid; 
+     grid-template-columns: repeat(3, 1fr); 
+     gap: 10px; 
+     max-width: 400px; 
+     margin: 4rem auto; 
+}
+.word { 
+    background: #111; 
+    padding: 10px; 
+    border-radius: 8px; 
+    border: 1px solid #444;
+    font-weight: 700;font-family: Verdana, Geneva, Tahoma, sans-serif; 
+    box-shadow: 0 2px 4px grey;
+}
+h1 {
+    font-family: sans-serif;
+    font-size: 2rem;
+}
+p {
+    font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
+}
+button {
+    margin: 3rem;
+    padding: 10px;
+    font-size: 0.9rem;
+    color: white;
+    background-color: #111;
+    border-radius: 10px;
+    transition: 0.3s ease;
+}
+button:hover {
+    box-shadow: 0 2px 4px ;
+    cursor: pointer;
+    transform: scale(1.07);
+}
+
+/* Mobile responsiveness for readability */
+@media (max-width: 768px) {
+  body {
+    margin: 6rem auto;
+    padding: 0 1rem;
+  }
+
+  h1 {
+    font-size: 2.2rem;
+  }
+
+  p {
+    font-size: 1.1rem;
+    padding: 0 1rem;
+  }
+
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 15px;
+    max-width: 100%;
+  }
+
+  .word {
+    padding: 15px;
+    font-size: 1.1rem;
+  }
+
+  button {
+    margin: 2rem auto;
+    padding: 15px 25px;
+    font-size: 1.1rem;
+    display: block;
+    max-width: 280px;
+  }
+}
+
+@media (max-width: 480px) {
+  body {
+    margin: 4rem auto;
+  }
+
+  h1 {
+    font-size: 2rem;
+  }
+
+  p {
+    font-size: 1rem;
+  }
+
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    max-width: 100%;
+  }
+
+  .word {
+    padding: 16px;
+    font-size: 1.15rem;
+  }
+
+  button {
+    margin: 1.5rem auto;
+    padding: 16px 25px;
+    font-size: 1.15rem;
+    width: 90%;
+  }
+}
+
+@media (max-width: 360px) {
+  body {
+    margin: 3rem auto;
+  }
+
+  h1 {
+    font-size: 1.8rem;
+  }
+
+  p {
+    font-size: 0.95rem;
+  }
+
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .word {
+    padding: 14px;
+    font-size: 1.1rem;
+  }
+
+  button {
+    padding: 14px 22px;
+    font-size: 1.1rem;
+    width: 95%;
+  }
+}

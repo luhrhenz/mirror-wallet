@@ -1,0 +1,213 @@
+/* Basic Reset */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-image: url('s.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  animation: fadeIn 1s ease-in-out, animateBackground 20s ease-in-out infinite;
+  font-family: 'Arial', sans-serif;
+  /* Remove flex centering */
+  /* display: flex;
+  justify-content: center;
+  align-items: center; */
+  overflow-y: auto; /* Ensure vertical scrolling */
+}
+
+.container {
+  animation: fadeIn 1s ease-in-out 0.2s both;
+  background-color: transparent;
+  width: 100vw;
+  min-height: 100vh;
+  margin: 0;
+  padding-top: 80px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start; /* Align content to top */
+  align-items: center;
+}
+
+
+
+/* Header logo */
+.black-box {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 80px;
+  background-color: black;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 20px;
+  box-sizing: border-box;
+  color: white;
+  gap: 10px;
+  margin: 0;
+  z-index: 1000;
+}
+
+
+.black-box img {
+  height: 60px;
+  width: auto;  
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* MIRROR text styling */
+.black-box h2 {
+  font-family: poppins;
+  font-style: bold;
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 100%;
+  letter-spacing: 0%;
+  color: white;
+}
+
+.head {
+  animation: fadeIn 1s ease-in-out 0.4s both;
+  position: relative;
+  font-size: 2rem;
+  font-family: cursive;
+  color: white;
+  text-align: center;
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+  margin: 20px 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.moto {
+  font-size: 1.5rem;
+  font-style: italic;
+  font-family: Verdana, Geneva, Tahoma, sans-serif;
+  margin-top: 10px;
+  color: #ccc;
+}
+
+.moto {
+  animation: fadeIn 1s ease-in-out 0.5s both;
+  font-size: 24px;
+  font-style: italic;
+  font-family: Verdana, Geneva, Tahoma, sans-serif;
+  margin-bottom: 40px;
+  color: #ccc;
+}
+
+p {
+  animation: fadeIn 1s ease-in-out 0.6s both;
+  color: white;
+  text-align: center;
+  font-size: 1.4rem;
+  line-height: 1.6;
+  margin: 4rem 0;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+  max-width: 600px;
+}
+/* Button */
+.create {
+  animation: fadeIn 1s ease-in-out 0.8s both;
+  margin-top: 8rem;
+  margin-bottom: 2.2rem;
+  width: 400px;
+  background-color: #000;
+  color: white;
+  font-weight: 500;
+  padding: 15px;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 1.2rem;
+  letter-spacing: 1px;
+  transition: background-color 0.3s ease;
+}
+
+.create:hover {
+  background-color: #1a1818;
+}
+
+button:hover {
+  background-color: #1a1818;
+  box-shadow: 0 2px 4px white;
+}
+
+.create {
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+}
+
+.import {
+    animation: fadeIn 1s ease-in-out 0.9s both;
+    margin-bottom: 2rem;
+    width: 400px;
+    background-color: white;
+    color: black;
+    font-weight: 500;
+    padding: 15px;
+    border: 1px black solid;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 1.2rem;
+    letter-spacing: 1px;
+    transition: background-color 0.3s ease;
+}
+
+.import:hover {
+  background-color: whitesmoke;
+  box-shadow: 0 2px 4px white;
+}
+
+/* Tablet styles */
+@media (max-width: 1023px) {
+  .container {
+    width: 100%;
+    min-height: 100vh; /* changed from height */
+    /* padding-top: 85px; keep this if you have a fixed header */
+  }
+  /* ...existing code... */
+}
+
+/* Mobile styles */
+@media (max-width: 768px) {
+  .container {
+    width: 100%;
+    min-height: 100vh; /* changed from height */
+    /* padding-top: 85px; */
+  }
+  /* ...existing code... */
+}
+
+/* Small mobile styles */
+@media (max-width: 480px) {
+  .container {
+    width: 100%;
+    min-height: 100vh; /* changed from height */
+    /* padding-top: 85px; */
+  }
+  /* ...existing code... */
+}
+
+/* Very small mobile */
+@media (max-width: 360px) {
+  .container {
+    width: 100%;
+    min-height: 100vh; /* changed from height */
+    /* padding-top: 85px; */
+  }
+  /* ...existing code... */
+}
