@@ -6,7 +6,7 @@ const sqlite3 = require("sqlite3").verbose();
 const { open } = require("sqlite");
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
@@ -187,10 +187,11 @@ app.post("/get-keystore", async (req, res) => {
     res.status(500).json({ error: "Server error. Please try again." });
   }
 });
-
 app.listen(PORT, () => {
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
+
+
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
