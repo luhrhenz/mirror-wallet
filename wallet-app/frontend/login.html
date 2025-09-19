@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login | Mirror Wallet</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.9.0/dist/ethers.umd.min.js"></script>
+  <link rel="stylesheet" href="login.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="black-box">
+      <img src="mirr.png" alt="Mirror Logo">
+      <h2>MIRROR</h2>
+    </div>  
+
+    <!-- Login Section -->
+    <div class="login-card">
+      <h1>Login</h1>
+      <form id="loginForm">
+        <input type="text" id="username" placeholder="Username" required>
+        <input type="password" id="password" placeholder="Password" required>
+        <button type="submit">Login</button>
+      </form>
+  <p>Don't have an account? <a href="create.html">Create one</a></p>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value.trim();
+
+      if (!username || !password) {
+        alert("Please enter both username and password.");
+        return;
+      }
+
+      try {
+        const res = await fetch("https://wallet-backend-jiph.onrender.com/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          alert(data.error || "Login failed");
+          return;
+        }
+
+        // Decrypt keystore with ethers.js
+        const wallet = await ethers.Wallet.fromEncryptedJson(data.keystore, password);
+
+        // Save user data to localStorage
+        localStorage.setItem("username", data.username);
+        localStorage.setItem("userId", data.userId.toString());
+        localStorage.setItem("walletAddress", wallet.address);
+
+        alert(`Welcome back, ${data.username}! \nWallet Address: ${wallet.address}`);
+
+        // Redirect to dashboard
+        window.location.href = "dashboard.html";
+
+      } catch (err) {
+        console.error(err);
+        alert("Failed to decrypt keystore. Wrong password?");
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mirror Wallet</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="black-box">
+      <img src="mirr.png" alt="Mirror Logo">
+      <h2>MIRROR</h2>
+    </div>
+    <div class="welcome">
+      <h1>Welcome to Mirror Wallet</h1>
+      <p>Secure Ethereum wallet management.</p>
+    </div>
+  </div>
+
+  <script>
+    // Check if user is logged in via localStorage
+    if (localStorage.getItem("username") && localStorage.getItem("walletAddress")) {
+      // Device session recognised - redirect to dashboard
+      window.location.href = "dashboard.html";
+    } else {
+      // No session - redirect to login
+      window.location.href = "login.html";
+    }
+  </script>
+</body>
+</html>
