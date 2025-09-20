@@ -40,7 +40,11 @@
       }
 
       try {
-        const res = await fetch("https://wallet-backend-jiph.onrender.com/login", {
+        const apiUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+          ? "http://localhost:3000"
+          : "https://wallet-backend-jiph.onrender.com";
+
+        const res = await fetch(`${apiUrl}/login`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ username, password })
@@ -60,6 +64,7 @@
         localStorage.setItem("username", data.username);
         localStorage.setItem("userId", data.userId.toString());
         localStorage.setItem("walletAddress", wallet.address);
+        localStorage.setItem("token", data.token); // Store JWT token
 
         alert(`Welcome back, ${data.username}! \nWallet Address: ${wallet.address}`);
 

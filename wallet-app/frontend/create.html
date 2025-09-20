@@ -29,8 +29,6 @@
           </div>
         </form>
       </div>
-      <!-- ...existing code... -->
-      <!-- ...existing code... -->
     </div>
     <script>
   const form = document.getElementById("signupForm");
@@ -43,6 +41,13 @@
 
     if (password !== confirmPassword) {
       alert("Passwords do not match");
+      return;
+    }
+
+    // Password strength validation
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    if (!passwordRegex.test(password)) {
+      alert("Password must be at least 8 characters with uppercase, lowercase, number, and special character");
       return;
     }
 
@@ -63,7 +68,11 @@
 
     try {
       // ✅ Send to backend
-      const response = await fetch("https://wallet-backend-jiph.onrender.com/signup", {
+      const apiUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? "http://localhost:3000"
+        : "https://wallet-backend-jiph.onrender.com";
+
+      const response = await fetch(`${apiUrl}/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password, keystore })

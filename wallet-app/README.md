@@ -17,10 +17,13 @@ A secure, full-stack Ethereum wallet application with user authentication, encry
 
 ### Backend
 - **Node.js** with Express.js
-- **PostgreSQL** database with Sequelize ORM
+- **MongoDB Atlas** database with Mongoose ODM
 - **bcryptjs** for password hashing
 - **CORS** for cross-origin requests
 - **Rate limiting** and input validation
+- **Winston** for structured logging
+- **JWT** for authentication
+- **AES-256-GCM** for keystore encryption
 
 ### Frontend
 - **Vanilla JavaScript** with ethers.js
@@ -31,7 +34,7 @@ A secure, full-stack Ethereum wallet application with user authentication, encry
 ### Deployment
 - **Frontend**: Netlify (https://mrrorwallet.netlify.app/)
 - **Backend**: Render (https://wallet-backend-jiph.onrender.com/)
-- **Database**: PostgreSQL on Render
+- **Database**: MongoDB Atlas
 
 ## 📋 Prerequisites
 
@@ -52,7 +55,9 @@ A secure, full-stack Ethereum wallet application with user authentication, encry
 4. **Add environment variables** in Render dashboard:
    ```
    NODE_ENV=production
-   DATABASE_URL=your_postgresql_connection_string
+   MONGODB_URI=your_mongodb_atlas_connection_string
+   JWT_SECRET=your_32_character_jwt_secret
+   ENCRYPTION_KEY=your_32_character_encryption_key
    ```
 5. **Deploy** the service
 
@@ -62,36 +67,39 @@ A secure, full-stack Ethereum wallet application with user authentication, encry
 2. **Configure build settings**:
    - Build Command: `echo "Frontend is static HTML/CSS/JS - no build required"`
    - Publish Directory: `frontend/`
-3. **Add environment variables** (if needed):
-   ```
-   API_BASE_URL=https://wallet-backend-jiph.onrender.com
-   ```
-4. **Deploy** the site
+3. **Deploy** the site
 
 ### Database Setup
 
-1. **Create PostgreSQL database** on Render or your preferred provider
+1. **Create MongoDB Atlas database** (free tier available)
 2. **Get connection string** and add to Render environment variables
-3. **Database schema** will be automatically created by Sequelize
+3. **Database collections** will be automatically created by Mongoose
 
 ## 🔧 Environment Variables
 
 ### Required
-- `DATABASE_URL`: PostgreSQL connection string
+- `MONGODB_URI`: MongoDB Atlas connection string
+- `JWT_SECRET`: Secret key for JWT tokens (minimum 32 characters)
+- `ENCRYPTION_KEY`: 32-character key for data encryption
 - `NODE_ENV`: Environment (development/production)
 
 ### Optional
 - `PORT`: Server port (default: 3000)
+- `LOG_LEVEL`: Logging level (default: info)
 
 ## 🔒 Security Features
 
-- **Input Validation**: Comprehensive client and server-side validation
-- **Rate Limiting**: 5 requests per 15-minute window per IP
-- **Password Requirements**: Minimum 8 characters, weak password detection
+- **Input Validation**: Comprehensive client and server-side validation with regex patterns
+- **Rate Limiting**: 10 requests per 15-minute window per IP (production), 100 for development
+- **Password Requirements**: Minimum 8 characters with uppercase, lowercase, number, and special character
+- **JWT Authentication**: Token-based session management with expiration
+- **AES-256-GCM Encryption**: Military-grade encryption for all keystore data
 - **HTTPS Enforcement**: Automatic redirect to HTTPS in production
 - **Security Headers**: XSS protection, content sniffing prevention
 - **CORS Configuration**: Restricted to allowed origins only
-- **SQL Injection Prevention**: Parameterized queries via Sequelize
+- **MongoDB Injection Prevention**: Parameterized queries via Mongoose ODM
+- **Structured Logging**: Winston logger for security monitoring
+- **Environment-based Configuration**: Secure credential management
 
 ## 📊 API Endpoints
 
