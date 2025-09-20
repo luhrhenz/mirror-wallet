@@ -86,7 +86,7 @@
 
       try {
         // Get keystore
-        const response = await fetch("http://localhost:3000/get-keystore", {
+        const response = await fetch("https://wallet-backend-jiph.onrender.com/get-keystore", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ username: localStorage.getItem("username"), password })
