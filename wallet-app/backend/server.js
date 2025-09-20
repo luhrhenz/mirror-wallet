@@ -1,7 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
-const { Sequelize, DataTypes } = require("sequelize");
+const sqlite3 = require("sqlite3").verbose();
+const { open } = require("sqlite");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -9,50 +10,38 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-const sequelize = new Sequelize(process.env.DATABASE_URL, {
-  dialect: 'postgres',
-  logging: false,
-  dialectOptions: {
-    ssl: { require: true, rejectUnauthorized: false }
-  }
-});
+let db;
 
-// User model
-const User = sequelize.define('User', {
-  id: {
-    type: DataTypes.INTEGER,
-    primaryKey: true,
-    autoIncrement: true
-  },
-  username: {
-    type: DataTypes.STRING,
-    allowNull: false,
-    unique: true
-  },
-  password_hash: {
-    type: DataTypes.STRING,
-    allowNull: false
-  },
-  keystore: {
-    type: DataTypes.TEXT,
-    allowNull: false
-  }
-});
-
-// Initialize DB
+// Initialize SQLite
 (async () => {
   try {
-    await sequelize.authenticate();
-    await sequelize.sync();
-    console.log("✅ PostgreSQL connected and synced");
+    db = await open({
+      filename: "./wallet.db",
+      driver: sqlite3.Database,
+    });
+
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        keystore TEXT NOT NULL
+      )
+    `);
+
+    console.log("✅ SQLite database ready");
   } catch (err) {
-    console.error("❌ Database connection failed:", err.message);
+    console.error("❌ Database initialization failed:", err.message);
     process.exit(1);
   }
 })();
 
 // Signup endpoint
 app.post("/signup", async (req, res) => {
+  if (!db) {
+    return res.status(503).json({ error: "Database not ready" });
+  }
+
   try {
     const { username, password, keystore } = req.body;
 
@@ -61,23 +50,26 @@ app.post("/signup", async (req, res) => {
     }
 
     // Check if user exists
-    const existingUser = await User.findOne({ where: { username } });
+    const existingUser = await db.get("SELECT id FROM users WHERE username = ?", [username]);
     if (existingUser) {
       return res.status(409).json({ error: "Username already exists" });
     }
 
     const hash = await bcrypt.hash(password, 12);
 
-    const user = await User.create({
-      username,
-      password_hash: hash,
-      keystore
-    });
+    const result = await db.run(
+      "INSERT INTO users (username, password_hash, keystore) VALUES (?, ?, ?)",
+      [username, hash, keystore]
+    );
 
-    res.status(201).json({ message: "User created successfully", userId: user.id });
+    if (result.changes > 0) {
+      res.status(201).json({ message: "User created successfully", userId: result.lastID });
+    } else {
+      res.status(500).json({ error: "Failed to create user" });
+    }
   } catch (err) {
     console.error("❌ Signup error:", err.message);
-    if (err.name === 'SequelizeUniqueConstraintError') {
+    if (err.code === 'SQLITE_CONSTRAINT') {
       res.status(409).json({ error: "Username already taken" });
     } else {
       res.status(500).json({ error: "Server error during signup. Please try again." });
@@ -87,6 +79,10 @@ app.post("/signup", async (req, res) => {
 
 // Login endpoint
 app.post("/login", async (req, res) => {
+  if (!db) {
+    return res.status(503).json({ error: "Database not ready" });
+  }
+
   try {
     const { username, password } = req.body;
 
@@ -94,7 +90,8 @@ app.post("/login", async (req, res) => {
       return res.status(400).json({ error: "Missing required fields: username, password" });
     }
 
-    const user = await User.findOne({ where: { username } });
+    const user = await db.get("SELECT id, username, password_hash, keystore FROM users WHERE username = ?", [username]);
+
     if (!user) {
       return res.status(401).json({ error: "Invalid username or password" });
     }
@@ -118,6 +115,10 @@ app.post("/login", async (req, res) => {
 
 // Import endpoint
 app.post("/import", async (req, res) => {
+  if (!db) {
+    return res.status(503).json({ error: "Database not ready" });
+  }
+
   try {
     const { username, password, newKeystore } = req.body;
 
@@ -125,7 +126,8 @@ app.post("/import", async (req, res) => {
       return res.status(400).json({ error: "Missing required fields: username, password, newKeystore" });
     }
 
-    const user = await User.findOne({ where: { username } });
+    const user = await db.get("SELECT id, password_hash FROM users WHERE username = ?", [username]);
+
     if (!user) {
       return res.status(404).json({ error: "User not found. Please sign up first." });
     }
@@ -135,7 +137,7 @@ app.post("/import", async (req, res) => {
       return res.status(401).json({ error: "Invalid username or password" });
     }
 
-    await user.update({ keystore: newKeystore });
+    await db.run("UPDATE users SET keystore = ? WHERE id = ?", [newKeystore, user.id]);
 
     res.json({
       message: "Wallet imported successfully",
@@ -150,6 +152,10 @@ app.post("/import", async (req, res) => {
 
 // Get keystore endpoint
 app.post("/get-keystore", async (req, res) => {
+  if (!db) {
+    return res.status(503).json({ error: "Database not ready" });
+  }
+
   try {
     const { username, password } = req.body;
 
@@ -157,7 +163,8 @@ app.post("/get-keystore", async (req, res) => {
       return res.status(400).json({ error: "Missing required fields: username, password" });
     }
 
-    const user = await User.findOne({ where: { username } });
+    const user = await db.get("SELECT id, username, password_hash, keystore FROM users WHERE username = ?", [username]);
+
     if (!user) {
       return res.status(401).json({ error: "Invalid username or password" });
     }
@@ -185,7 +192,9 @@ app.listen(PORT, () => {
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
-  await sequelize.close();
-  console.log("✅ Database connection closed");
+  if (db) {
+    await db.close();
+    console.log("✅ Database connection closed");
+  }
   process.exit(0);
 });

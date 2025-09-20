@@ -81,8 +81,8 @@
         alert(data.error || "Signup failed");
       }
     } catch (err) {
-      console.error("Request failed:", err);
-      alert("Network error, please check server is running.");
+      console.error("Signup error details:", err);
+      alert("Network error: " + err.message + ". Check console (F12) for details and ensure backend is running on localhost:3000.");
     }
   });
 </script>
