@@ -85,7 +85,20 @@
         }
       } catch (err) {
         console.error("Import error:", err);
-        alert("Invalid recovery phrase or network error. Please check and try again.");
+
+        if (err.message.includes("invalid mnemonic")) {
+          alert("Invalid recovery phrase. Please check your 12-word phrase and try again.");
+        } else if (err.message.includes("NetworkError") || err.message.includes("fetch")) {
+          alert("Network error. Please check your internet connection and try again.");
+        } else if (err.message.includes("404")) {
+          alert("User not found. Please sign up first.");
+        } else if (err.message.includes("401")) {
+          alert("Invalid password. Please check your password and try again.");
+        } else if (err.message.includes("503")) {
+          alert("Server is temporarily unavailable. Please try again later.");
+        } else {
+          alert("An unexpected error occurred during import. Please try again.");
+        }
       }
     });
   </script>

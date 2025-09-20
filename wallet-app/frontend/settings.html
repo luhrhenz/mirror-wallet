@@ -123,7 +123,16 @@
 
       } catch (err) {
         console.error("Reveal passphrase error:", err);
-        alert("Incorrect password or server error. Try again.");
+
+        if (err.message.includes("invalid password") || err.message.includes("password")) {
+          alert("Incorrect password. Please try again.");
+        } else if (err.message.includes("NetworkError") || err.message.includes("fetch")) {
+          alert("Network error. Please check your connection and try again.");
+        } else if (err.message.includes("503")) {
+          alert("Server temporarily unavailable. Please try again later.");
+        } else {
+          alert("An unexpected error occurred. Please try again.");
+        }
       }
     });
 

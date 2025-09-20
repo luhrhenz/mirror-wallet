@@ -82,7 +82,18 @@
       }
     } catch (err) {
       console.error("Signup error details:", err);
-      alert("Network error: " + err.message + ". Check console (F12) for details and ensure backend is running on https://wallet-backend-jiph.onrender.com.");
+
+      if (err.message.includes("NetworkError") || err.message.includes("fetch")) {
+        alert("Network error. Please check your internet connection and try again.");
+      } else if (err.message.includes("409")) {
+        alert("Username already exists. Please choose a different username.");
+      } else if (err.message.includes("400")) {
+        alert("Invalid input. Please check your username and password.");
+      } else if (err.message.includes("503")) {
+        alert("Server is temporarily unavailable. Please try again later.");
+      } else {
+        alert("An unexpected error occurred during signup. Please try again.");
+      }
     }
   });
 </script>

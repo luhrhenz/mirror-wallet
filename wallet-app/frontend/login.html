@@ -67,8 +67,17 @@
         window.location.href = "dashboard.html";
 
       } catch (err) {
-        console.error(err);
-        alert("Failed to decrypt keystore. Wrong password?");
+        console.error("Login error:", err);
+
+        if (err.message.includes("invalid password")) {
+          alert("Failed to decrypt keystore. Wrong password?");
+        } else if (err.message.includes("NetworkError") || err.message.includes("fetch")) {
+          alert("Network error. Please check your internet connection and try again.");
+        } else if (err.message.includes("503")) {
+          alert("Server is temporarily unavailable. Please try again later.");
+        } else {
+          alert("An unexpected error occurred. Please try again.");
+        }
       }
     });
   </script>

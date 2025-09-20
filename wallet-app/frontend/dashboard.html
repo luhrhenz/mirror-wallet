@@ -271,7 +271,20 @@
         document.getElementById("sendPassword").value = "";
       } catch (err) {
         console.error("Send error:", err);
-        status.textContent = err.message.includes("password") ? "Incorrect password." : "Send failed. Check details and try again.";
+
+        if (err.message.includes("invalid password") || err.message.includes("password")) {
+          status.textContent = "Incorrect password.";
+        } else if (err.message.includes("insufficient funds")) {
+          status.textContent = "Insufficient funds for transaction and gas fees.";
+        } else if (err.message.includes("NetworkError") || err.message.includes("fetch")) {
+          status.textContent = "Network error. Please check your connection and try again.";
+        } else if (err.message.includes("503")) {
+          status.textContent = "Server temporarily unavailable. Please try again later.";
+        } else if (err.message.includes("user rejected")) {
+          status.textContent = "Transaction was rejected.";
+        } else {
+          status.textContent = "Transaction failed. Please check details and try again.";
+        }
         status.style.color = "#ff6b6b";
       }
     });
