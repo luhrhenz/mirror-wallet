@@ -1,23 +1,107 @@
+require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
-const { Sequelize, DataTypes } = require("sequelize");
+const mongoose = require("mongoose");
+const winston = require("winston");
+const jwt = require("jsonwebtoken");
+const rateLimit = require("express-rate-limit");
+const crypto = require("crypto");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Environment variables validation
-const requiredEnvVars = ['DATABASE_URL', 'NODE_ENV'];
-const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+// ====== LOGGER CONFIG ======
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.errors({ stack: true }),
+    winston.format.json()
+  ),
+  defaultMeta: { service: 'wallet-backend' },
+  transports: [
+    new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
+    new winston.transports.File({ filename: 'logs/combined.log' }),
+  ],
+});
 
-if (missingEnvVars.length > 0) {
-  console.error(`❌ Missing required environment variables: ${missingEnvVars.join(', ')}`);
-  console.error('Please set these in your Render dashboard');
+if (process.env.NODE_ENV !== 'production') {
+  logger.add(new winston.transports.Console({
+    format: winston.format.combine(
+      winston.format.colorize(),
+      winston.format.simple()
+    )
+  }));
 }
 
-// CORS configuration - Production-ready with specific origins
+// ====== JWT CONFIG ======
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+
+// JWT helper functions
+function generateToken(userId) {
+  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+}
+
+function verifyToken(token) {
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch (err) {
+    return null;
+  }
+}
+
+// Authentication middleware
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+
+  const decoded = verifyToken(token);
+  if (!decoded) {
+    return res.status(403).json({ error: 'Invalid or expired token' });
+  }
+
+  req.userId = decoded.userId;
+  next();
+}
+
+// ====== ENCRYPTION CONFIG ======
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'your-32-character-encryption-key!!'; // 32 bytes
+const ALGORITHM = 'aes-256-gcm';
+const IV_LENGTH = 16;
+
+// Encryption helper functions
+function encrypt(text) {
+  const iv = crypto.randomBytes(IV_LENGTH);
+  const cipher = crypto.createCipher(ALGORITHM, ENCRYPTION_KEY);
+  let encrypted = cipher.update(text, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  const authTag = cipher.getAuthTag();
+  return iv.toString('hex') + ':' + encrypted + ':' + authTag.toString('hex');
+}
+
+function decrypt(encryptedText) {
+  const parts = encryptedText.split(':');
+  const iv = Buffer.from(parts[0], 'hex');
+  const encrypted = parts[1];
+  const authTag = Buffer.from(parts[2], 'hex');
+
+  const decipher = crypto.createDecipher(ALGORITHM, ENCRYPTION_KEY);
+  decipher.setAuthTag(authTag);
+  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
+}
+
+// ====== CORS CONFIG ======
 const allowedOrigins = [
-  "http://localhost:3000", 
+  "http://localhost:3000",
   "https://mrrorwallet.netlify.app"
 ];
 
@@ -33,528 +117,239 @@ app.use(cors({
   credentials: true
 }));
 
-// ✅ JSON body parser
+// ====== JSON PARSER ======
 app.use(express.json());
 
-// Security headers
-app.use((req, res, next) => {
-  // HTTPS enforcement
-  if (req.header('x-forwarded-proto') !== 'https' && process.env.NODE_ENV === 'production') {
-    res.redirect(`https://${req.header('host')}${req.url}`);
-  } else {
-    // Security headers
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('X-XSS-Protection', '1; mode=block');
-    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-    next();
+// ====== MONGO CONNECTION ======
+const mongoUri = process.env.MONGO_URI;
+if (!mongoUri) {
+  console.error("❌ Missing MONGO_URI environment variable.");
+}
+
+mongoose.connect(mongoUri)
+  .then(() => logger.info("✅ Connected to MongoDB Atlas"))
+  .catch(err => logger.error("❌ MongoDB connection error:", err));
+
+// ====== USER SCHEMA ======
+const userSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true, minlength: 3, maxlength: 50 },
+  password_hash: { type: String, required: true },
+  keystore: { type: String, required: true },
+}, { timestamps: true });
+
+const User = mongoose.model("User", userSchema);
+
+// ====== RATE LIMITING ======
+const createRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // limit each IP to 5 requests per windowMs
+  message: { error: "Too many requests, try later." },
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  handler: (req, res) => {
+    logger.warn("Rate limit exceeded", {
+      ip: req.ip,
+      url: req.url,
+      userAgent: req.get("User-Agent")
+    });
+    res.status(429).json({ error: "Too many requests, try later." });
   }
 });
 
-// Database configuration with better error handling
-let sequelize;
-let User;
-let dbInitialized = false;
+// ====== INPUT VALIDATORS ======
+const USERNAME_REGEX = /^[a-zA-Z0-9_-]{3,50}$/;
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+const KEYSTORE_REGEX = /^\{[\s\S]*\}$/; // Basic JSON object validation
 
-function initializeDatabase() {
-  try {
-    if (!process.env.DATABASE_URL) {
-      console.log("⚠️ No DATABASE_URL found - running in demo mode");
-      console.log("💡 To enable database features, add DATABASE_URL to your Render environment variables");
-      return null;
-    }
-
-    console.log("🔄 Initializing database connection...");
-
-    sequelize = new Sequelize(process.env.DATABASE_URL, {
-      dialect: 'postgres',
-      protocol: 'postgres',
-      logging: process.env.NODE_ENV === 'development' ? console.log : false,
-      pool: {
-        max: 5,
-        min: 0,
-        acquire: 30000,
-        idle: 10000
-      },
-      retry: {
-        max: 5,
-        backoffBase: 1000,
-        backoffExponent: 1.5
-      },
-      dialectOptions: {
-        ssl: process.env.NODE_ENV === 'production' ? {
-          require: true,
-          rejectUnauthorized: false
-        } : false
-      }
-    });
-
-    // Define User model
-    User = sequelize.define('User', {
-      id: {
-        type: DataTypes.INTEGER,
-        primaryKey: true,
-        autoIncrement: true
-      },
-      username: {
-        type: DataTypes.STRING,
-        unique: true,
-        allowNull: false,
-        validate: {
-          len: [3, 50],
-          isAlphanumeric: true
-        }
-      },
-      password_hash: {
-        type: DataTypes.TEXT,
-        allowNull: false
-      },
-      keystore: {
-        type: DataTypes.TEXT,
-        allowNull: false
-      }
-    }, {
-      tableName: 'users',
-      timestamps: true,
-      createdAt: 'created_at',
-      updatedAt: 'updated_at'
-    });
-
-    return sequelize;
-  } catch (err) {
-    console.error("❌ Database initialization failed:", err.message);
-    console.error("Full error:", err);
-    return null;
-  }
-}
-
-
-// Initialize database
-(async () => {
-  const db = initializeDatabase();
-
-  if (!db) {
-    console.log("⚠️ No database configured - running in demo mode");
-    dbInitialized = false;
-    return;
-  }
-
-  try {
-    console.log("🔄 Attempting to connect to database...");
-    await sequelize.authenticate();
-    console.log("✅ PostgreSQL connection established");
-
-    await sequelize.sync();
-    console.log("✅ Database synchronized");
-    dbInitialized = true;
-  } catch (err) {
-    console.error("❌ Database initialization failed:", err.message);
-    console.error("❌ Full error:", err);
-    console.log("⚠️ Server will start but database operations will fail");
-    dbInitialized = false;
-  }
-})();
-// Input validation middleware
 function validateSignupInput(req, res, next) {
   const { username, password, keystore } = req.body;
 
-  // Validate username
-  if (!username || typeof username !== 'string' || username.length < 3 || username.length > 50) {
-    return res.status(400).json({ error: "Username must be 3-50 characters long" });
-  }
-
-  // Validate password
-  if (!password || typeof password !== 'string' || password.length < 8) {
-    return res.status(400).json({ error: "Password must be at least 8 characters long" });
-  }
-
-  // Validate keystore
-  if (!keystore || typeof keystore !== 'string' || keystore.length < 100) {
-    return res.status(400).json({ error: "Invalid keystore data" });
-  }
-
-  // Check for common weak passwords
-  const weakPasswords = ['password', '12345678', 'qwerty123', 'admin123', 'password123'];
-  if (weakPasswords.includes(password.toLowerCase())) {
-    return res.status(400).json({ error: "Password is too weak. Please choose a stronger password." });
-  }
-
-  next();
-}
-
-// Rate limiting (simple in-memory implementation)
-const rateLimitMap = new Map();
-const RATE_LIMIT_WINDOW = 15 * 60 * 1000; // 15 minutes
-const RATE_LIMIT_MAX_REQUESTS = 5; // 5 requests per window
-
-function rateLimit(req, res, next) {
-  const clientIP = req.ip || req.connection.remoteAddress;
-  const now = Date.now();
-  const windowStart = now - RATE_LIMIT_WINDOW;
-
-  // Get or create rate limit data for this IP
-  if (!rateLimitMap.has(clientIP)) {
-    rateLimitMap.set(clientIP, []);
-  }
-
-  const requests = rateLimitMap.get(clientIP);
-
-  // Remove old requests outside the window
-  while (requests.length > 0 && requests[0] < windowStart) {
-    requests.shift();
-  }
-
-  // Check if rate limit exceeded
-  if (requests.length >= RATE_LIMIT_MAX_REQUESTS) {
-    return res.status(429).json({
-      error: "Too many requests. Please try again later.",
-      retryAfter: Math.ceil(RATE_LIMIT_WINDOW / 1000)
+  // Username validation
+  if (!username || !USERNAME_REGEX.test(username)) {
+    return res.status(400).json({
+      error: "Username must be 3-50 characters, alphanumeric with underscores and hyphens only"
     });
   }
 
-  // Add current request
-  requests.push(now);
-  next();
-}
-
-// Signup endpoint
-app.post("/signup", rateLimit, validateSignupInput, async (req, res) => {
-  if (!User) {
-    return res.status(503).json({ error: "Database not configured. Please contact administrator." });
+  // Password validation
+  if (!password || !PASSWORD_REGEX.test(password)) {
+    return res.status(400).json({
+      error: "Password must be at least 8 characters with uppercase, lowercase, number, and special character"
+    });
   }
 
-  if (!dbInitialized) {
-    return res.status(503).json({ error: "Database not ready. Please try again later." });
+  // Keystore validation
+  if (!keystore || keystore.length < 100 || !KEYSTORE_REGEX.test(keystore.trim())) {
+    return res.status(400).json({
+      error: "Invalid keystore data - must be a valid JSON object with minimum 100 characters"
+    });
   }
 
+  // Additional JSON validation
   try {
-    const { username, password, keystore } = req.body;
-
-    // Additional server-side validation
-    if (username.includes(' ')) {
-      return res.status(400).json({ error: "Username cannot contain spaces" });
-    }
-
-    // Check if user exists
-    const existingUser = await User.findOne({ where: { username } });
-    if (existingUser) {
-      return res.status(409).json({ error: "Username already exists" });
-    }
-
-    const hash = await bcrypt.hash(password, 12);
-
-    const newUser = await User.create({
-      username,
-      password_hash: hash,
-      keystore
-    });
-
-    res.status(201).json({ message: "User created successfully", userId: newUser.id });
+    JSON.parse(keystore);
   } catch (err) {
-    console.error("❌ Signup error:", err.message);
-    if (err.name === 'SequelizeUniqueConstraintError') {
-      res.status(409).json({ error: "Username already taken" });
-    } else {
-      res.status(500).json({ error: "Server error during signup. Please try again." });
-    }
+    return res.status(400).json({ error: "Keystore must be valid JSON" });
   }
-});
 
-// Input validation middleware for login
+  next();
+}
+
 function validateLoginInput(req, res, next) {
   const { username, password } = req.body;
 
-  if (!username || typeof username !== 'string' || username.length < 3 || username.length > 50) {
-    return res.status(400).json({ error: "Invalid username format" });
+  if (!username || !USERNAME_REGEX.test(username)) {
+    return res.status(400).json({
+      error: "Username must be 3-50 characters, alphanumeric with underscores and hyphens only"
+    });
   }
 
-  if (!password || typeof password !== 'string' || password.length < 1) {
+  if (!password || password.length < 1) {
     return res.status(400).json({ error: "Password is required" });
   }
 
   next();
 }
 
-// Login endpoint
-app.post("/login", rateLimit, validateLoginInput, async (req, res) => {
-  if (!User) {
-    return res.status(503).json({ error: "Database not configured. Please contact administrator." });
+function validateImportInput(req, res, next) {
+  const { newKeystore } = req.body;
+
+  if (!newKeystore || newKeystore.length < 100 || !KEYSTORE_REGEX.test(newKeystore.trim())) {
+    return res.status(400).json({
+      error: "Invalid keystore data - must be a valid JSON object with minimum 100 characters"
+    });
   }
 
-  if (!dbInitialized) {
-    return res.status(503).json({ error: "Database not ready. Please try again later." });
+  // Additional JSON validation
+  try {
+    JSON.parse(newKeystore);
+  } catch (err) {
+    return res.status(400).json({ error: "Keystore must be valid JSON" });
   }
 
+  next();
+}
+
+// ====== ROUTES ======
+
+// Signup
+app.post("/signup", createRateLimit, validateSignupInput, async (req, res) => {
+  try {
+    const { username, password, keystore } = req.body;
+    const existing = await User.findOne({ username });
+    if (existing) return res.status(409).json({ error: "Username already exists" });
+
+    const hash = await bcrypt.hash(password, 12);
+    const encryptedKeystore = encrypt(keystore);
+    const newUser = await User.create({ username, password_hash: hash, keystore: encryptedKeystore });
+
+    logger.info("User created successfully", { userId: newUser._id, username });
+    res.status(201).json({ message: "User created", userId: newUser._id });
+  } catch (err) {
+    logger.error("Signup error:", { error: err.message, stack: err.stack });
+    res.status(500).json({ error: "Server error during signup" });
+  }
+});
+
+// Login
+app.post("/login", createRateLimit, validateLoginInput, async (req, res) => {
   try {
     const { username, password } = req.body;
-
-    const user = await User.findOne({ where: { username } });
-
-    if (!user) {
-      return res.status(401).json({ error: "Invalid username or password" });
-    }
+    const user = await User.findOne({ username });
+    if (!user) return res.status(401).json({ error: "Invalid username or password" });
 
     const match = await bcrypt.compare(password, user.password_hash);
-    if (!match) {
-      return res.status(401).json({ error: "Invalid username or password" });
-    }
+    if (!match) return res.status(401).json({ error: "Invalid username or password" });
+
+    const token = generateToken(user._id);
+    const decryptedKeystore = decrypt(user.keystore);
+    logger.info("User logged in successfully", { userId: user._id, username });
 
     res.json({
       message: "Login successful",
-      username: user.username,
-      keystore: user.keystore,
-      userId: user.id
+      token,
+      userId: user._id,
+      username,
+      keystore: decryptedKeystore
     });
   } catch (err) {
-    console.error("❌ Login error:", err.message);
-    res.status(500).json({ error: "Server error during login. Please try again." });
+    logger.error("Login error:", { error: err.message, stack: err.stack });
+    res.status(500).json({ error: "Server error during login" });
   }
 });
 
-// Import endpoint
-app.post("/import", async (req, res) => {
-  if (!User) {
-    return res.status(503).json({ error: "Database not configured. Please contact administrator." });
-  }
-
-  if (!dbInitialized) {
-    return res.status(503).json({ error: "Database not ready. Please try again later." });
-  }
-
+// Import wallet
+app.post("/import", authenticateToken, validateImportInput, async (req, res) => {
   try {
-    const { username, password, newKeystore } = req.body;
+    const { newKeystore } = req.body;
 
-    if (!username || !password || !newKeystore) {
-      return res.status(400).json({ error: "Missing required fields: username, password, newKeystore" });
+    if (!newKeystore || newKeystore.length < 100) {
+      return res.status(400).json({ error: "Invalid keystore data" });
     }
 
-    const user = await User.findOne({ where: { username } });
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
 
-    if (!user) {
-      return res.status(404).json({ error: "User not found. Please sign up first." });
-    }
+    const encryptedKeystore = encrypt(newKeystore);
+    user.keystore = encryptedKeystore;
+    await user.save();
 
-    const match = await bcrypt.compare(password, user.password_hash);
-    if (!match) {
-      return res.status(401).json({ error: "Invalid username or password" });
-    }
-
-    await user.update({ keystore: newKeystore });
-
-    res.json({
-      message: "Wallet imported successfully",
-      userId: user.id,
-      username: username
-    });
+    logger.info("Wallet imported successfully", { userId: user._id });
+    res.json({ message: "Wallet imported", userId: user._id });
   } catch (err) {
-    console.error("❌ Import error:", err.message);
-    res.status(500).json({ error: "Server error during import. Please try again." });
+    logger.error("Import error:", { error: err.message, stack: err.stack });
+    res.status(500).json({ error: "Server error during import" });
   }
 });
 
-// Input validation middleware for keystore operations
-function validateKeystoreInput(req, res, next) {
-  const { username, password } = req.body;
-
-  if (!username || typeof username !== 'string' || username.length < 3 || username.length > 50) {
-    return res.status(400).json({ error: "Invalid username format" });
-  }
-
-  if (!password || typeof password !== 'string' || password.length < 1) {
-    return res.status(400).json({ error: "Password is required" });
-  }
-
-  next();
-}
-
-// Get keystore endpoint
-app.post("/get-keystore", rateLimit, validateKeystoreInput, async (req, res) => {
-  if (!User) {
-    return res.status(503).json({ error: "Database not configured. Please contact administrator." });
-  }
-
-  if (!dbInitialized) {
-    return res.status(503).json({ error: "Database not ready. Please try again later." });
-  }
-
+// Get keystore
+app.post("/get-keystore", createRateLimit, authenticateToken, async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
 
-    const user = await User.findOne({ where: { username } });
-
-    if (!user) {
-      return res.status(401).json({ error: "Invalid username or password" });
-    }
-
-    const match = await bcrypt.compare(password, user.password_hash);
-    if (!match) {
-      return res.status(401).json({ error: "Invalid username or password" });
-    }
-
-    res.json({
-      message: "Keystore retrieved successfully",
-      username: user.username,
-      keystore: user.keystore,
-      userId: user.id
-    });
+    const decryptedKeystore = decrypt(user.keystore);
+    logger.info("Keystore retrieved successfully", { userId: user._id });
+    res.json({ keystore: decryptedKeystore, userId: user._id, username: user.username });
   } catch (err) {
-    console.error("❌ Get keystore error:", err.message);
-    res.status(500).json({ error: "Server error. Please try again." });
+    logger.error("Get keystore error:", { error: err.message, stack: err.stack });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-// User profile endpoint (for data recovery)
-app.get("/user/:userId", rateLimit, async (req, res) => {
-  if (!User) {
-    return res.status(503).json({ error: "Database not configured. Please contact administrator." });
-  }
-
-  if (!dbInitialized) {
-    return res.status(503).json({ error: "Database not ready. Please try again later." });
-  }
-
+// User profile
+app.get("/user/:id", async (req, res) => {
   try {
-    const { userId } = req.params;
+    const user = await User.findById(req.params.id).select("username createdAt");
+    if (!user) return res.status(404).json({ error: "User not found" });
 
-    if (!userId || isNaN(userId)) {
-      return res.status(400).json({ error: "Invalid user ID" });
-    }
-
-    const user = await User.findByPk(userId);
-
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    // Return non-sensitive user data
-    res.json({
-      userId: user.id,
-      username: user.username,
-      createdAt: user.created_at,
-      accountExists: true
-    });
+    res.json({ userId: user._id, username: user.username, createdAt: user.createdAt });
   } catch (err) {
-    console.error("❌ User lookup error:", err.message);
-    res.status(500).json({ error: "Server error during user lookup." });
+    logger.error("User lookup error:", { error: err.message, stack: err.stack });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-// Backup endpoint (admin only - for data recovery)
-app.get("/admin/backup", rateLimit, async (req, res) => {
-  if (!User) {
-    return res.status(503).json({ error: "Database not configured. Please contact administrator." });
-  }
-
-  if (!dbInitialized) {
-    return res.status(503).json({ error: "Database not ready. Please try again later." });
-  }
-
-  // In production, add admin authentication here
-  if (process.env.NODE_ENV === 'production' && req.headers.authorization !== 'Bearer ' + process.env.ADMIN_TOKEN) {
-    return res.status(403).json({ error: "Admin access required" });
-  }
-
+// Backup (admin only)
+app.get("/admin/backup", async (req, res) => {
   try {
-    const users = await User.findAll({
-      attributes: ['id', 'username', 'created_at', 'updated_at'],
-      order: [['created_at', 'DESC']]
-    });
-
-    res.json({
-      backup: {
-        timestamp: new Date().toISOString(),
-        totalUsers: users.length,
-        users: users
-      }
-    });
-  } catch (err) {
-    console.error("❌ Backup error:", err.message);
-    res.status(500).json({ error: "Server error during backup." });
-  }
-});
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  const health = {
-    status: 'OK',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development',
-    database: dbInitialized ? 'connected' : 'disconnected',
-    uptime: process.uptime()
-  };
-
-  const statusCode = dbInitialized ? 200 : 503;
-  res.status(statusCode).json(health);
-});
-
-// API status endpoint
-app.get('/api/status', (req, res) => {
-  res.json({
-    message: 'Wallet API is running',
-    version: '1.0.0',
-    database: dbInitialized ? 'available' : 'unavailable',
-    environment: process.env.NODE_ENV || 'development',
-    uptime: process.uptime(),
-    endpoints: [
-      'POST /signup',
-      'POST /login',
-      'POST /import',
-      'POST /get-keystore',
-      'GET /user/:userId',
-      'GET /admin/backup',
-      'GET /health',
-      'GET /api/status'
-    ],
-    security: {
-      rateLimiting: 'enabled',
-      inputValidation: 'enabled',
-      cors: 'configured',
-      httpsEnforcement: process.env.NODE_ENV === 'production' ? 'enabled' : 'disabled'
+    if (process.env.NODE_ENV === "production" &&
+        req.headers.authorization !== "Bearer " + process.env.ADMIN_TOKEN) {
+      return res.status(403).json({ error: "Admin access required" });
     }
-  });
-});
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('❌ Unhandled error:', err);
-  res.status(500).json({
-    error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
-  });
-});
-
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    error: 'Endpoint not found',
-    message: `Route ${req.method} ${req.path} does not exist`
-  });
-});
-
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📊 Health check available at: http://localhost:${PORT}/health`);
-  console.log(`📊 API status available at: http://localhost:${PORT}/api/status`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🗄️ Database: ${dbInitialized ? '✅ Connected' : '❌ Disconnected'}`);
-});
-
-// Graceful shutdown
-process.on('SIGINT', async () => {
-  console.log("✅ Shutting down gracefully...");
-  if (sequelize) {
-    await sequelize.close();
-    console.log("✅ Database connection closed");
+    const users = await User.find().select("username createdAt updatedAt");
+    res.json({ backup: { total: users.length, users } });
+  } catch (err) {
+    logger.error("Backup error:", { error: err.message, stack: err.stack });
+    res.status(500).json({ error: "Server error" });
   }
-  process.exit(0);
 });
 
-process.on('SIGTERM', async () => {
-  console.log("✅ Received SIGTERM, shutting down gracefully...");
-  if (sequelize) {
-    await sequelize.close();
-    console.log("✅ Database connection closed");
-  }
-  process.exit(0);
+// Health
+app.get("/health", (req, res) => {
+  res.json({ status: "OK", db: mongoose.connection.readyState === 1 ? "connected" : "disconnected" });
 });
+
+// ====== SERVER START ======
+app.listen(PORT, () => logger.info(`🚀 Server running on port ${PORT}`));
