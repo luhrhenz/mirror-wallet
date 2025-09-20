@@ -18,52 +18,71 @@ app.use(cors({
 
 app.use(express.json());
 
-// Initialize PostgreSQL with Sequelize
-const sequelize = new Sequelize(process.env.DATABASE_URL, {
-  dialect: 'postgres',
-  protocol: 'postgres',
-  logging: console.log, // Enable logging to see connection issues
-  pool: {
-    max: 5,
-    min: 0,
-    acquire: 30000,
-    idle: 10000
-  },
-  // Handle connection issues gracefully
-  retry: {
-    max: 3
-  }
-});
+// Initialize PostgreSQL with Sequelize - with fallback for missing DATABASE_URL
+let sequelize;
+let User;
 
-// Define User model
-const User = sequelize.define('User', {
-  id: {
-    type: DataTypes.INTEGER,
-    primaryKey: true,
-    autoIncrement: true
-  },
-  username: {
-    type: DataTypes.STRING,
-    unique: true,
-    allowNull: false
-  },
-  password_hash: {
-    type: DataTypes.TEXT,
-    allowNull: false
-  },
-  keystore: {
-    type: DataTypes.TEXT,
-    allowNull: false
+try {
+  if (process.env.DATABASE_URL) {
+    sequelize = new Sequelize(process.env.DATABASE_URL, {
+      dialect: 'postgres',
+      protocol: 'postgres',
+      logging: console.log,
+      pool: {
+        max: 5,
+        min: 0,
+        acquire: 30000,
+        idle: 10000
+      },
+      retry: {
+        max: 3
+      }
+    });
+
+    // Define User model
+    User = sequelize.define('User', {
+      id: {
+        type: DataTypes.INTEGER,
+        primaryKey: true,
+        autoIncrement: true
+      },
+      username: {
+        type: DataTypes.STRING,
+        unique: true,
+        allowNull: false
+      },
+      password_hash: {
+        type: DataTypes.TEXT,
+        allowNull: false
+      },
+      keystore: {
+        type: DataTypes.TEXT,
+        allowNull: false
+      }
+    }, {
+      tableName: 'users',
+      timestamps: false
+    });
+  } else {
+    console.log("⚠️ No DATABASE_URL found - running without database");
+    User = null;
   }
-}, {
-  tableName: 'users',
-  timestamps: false
-});
+} catch (err) {
+  console.error("❌ Database setup failed:", err.message);
+  User = null;
+}
+
 
 // Initialize database
 let dbInitialized = false;
 
 (async () => {
+  if (!sequelize) {
+    console.log("⚠️ No database configured - running in demo mode");
+    dbInitialized = false;
+    return;
+  }
+
   try {
     console.log("🔄 Attempting to connect to database...");
     await sequelize.authenticate();
@@ -81,6 +100,10 @@ let dbInitialized = false;
 })();
 // Signup endpoint
 app.post("/signup", async (req, res) => {
+  if (!User) {
+    return res.status(503).json({ error: "Database not configured. Please contact administrator." });
+  }
+
   if (!dbInitialized) {
     return res.status(503).json({ error: "Database not ready. Please try again later." });
   }
@@ -119,6 +142,10 @@ app.post("/signup", async (req, res) => {
 
 // Login endpoint
 app.post("/login", async (req, res) => {
+  if (!User) {
+    return res.status(503).json({ error: "Database not configured. Please contact administrator." });
+  }
+
   if (!dbInitialized) {
     return res.status(503).json({ error: "Database not ready. Please try again later." });
   }
@@ -155,6 +182,10 @@ app.post("/login", async (req, res) => {
 
 // Import endpoint
 app.post("/import", async (req, res) => {
+  if (!User) {
+    return res.status(503).json({ error: "Database not configured. Please contact administrator." });
+  }
+
   if (!dbInitialized) {
     return res.status(503).json({ error: "Database not ready. Please try again later." });
   }
@@ -192,6 +223,10 @@ app.post("/import", async (req, res) => {
 
 // Get keystore endpoint
 app.post("/get-keystore", async (req, res) => {
+  if (!User) {
+    return res.status(503).json({ error: "Database not configured. Please contact administrator." });
+  }
+
   if (!dbInitialized) {
     return res.status(503).json({ error: "Database not ready. Please try again later." });
   }
@@ -233,7 +268,9 @@ app.listen(PORT, () => {
 // Graceful shutdown
 process.on('SIGINT', async () => {
   console.log("✅ Shutting down gracefully...");
-  await sequelize.close();
-  console.log("✅ Database connection closed");
+  if (sequelize) {
+    await sequelize.close();
+    console.log("✅ Database connection closed");
+  }
   process.exit(0);
 });
