@@ -22,8 +22,13 @@ const logger = winston.createLogger({
   ),
   defaultMeta: { service: 'wallet-backend' },
   transports: [
-    new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
-    new winston.transports.File({ filename: 'logs/combined.log' }),
+    new winston.transports.File({
+      filename: process.env.NODE_ENV === 'production' ? 'error.log' : 'logs/error.log',
+      level: 'error'
+    }),
+    new winston.transports.File({
+      filename: process.env.NODE_ENV === 'production' ? 'combined.log' : 'logs/combined.log'
+    }),
   ],
 });
 
@@ -78,25 +83,44 @@ const IV_LENGTH = 16;
 
 // Encryption helper functions
 function encrypt(text) {
-  const iv = crypto.randomBytes(IV_LENGTH);
-  const cipher = crypto.createCipher(ALGORITHM, ENCRYPTION_KEY);
-  let encrypted = cipher.update(text, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  const authTag = cipher.getAuthTag();
-  return iv.toString('hex') + ':' + encrypted + ':' + authTag.toString('hex');
+  try {
+    const iv = crypto.randomBytes(IV_LENGTH);
+    const cipher = crypto.createCipherGCM(ALGORITHM, Buffer.from(ENCRYPTION_KEY, 'utf8'));
+    cipher.setAAD(Buffer.from('wallet-app', 'utf8'));
+
+    let encrypted = cipher.update(text, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+
+    const authTag = cipher.getAuthTag();
+    return iv.toString('hex') + ':' + encrypted + ':' + authTag.toString('hex');
+  } catch (error) {
+    logger.error('Encryption error:', error);
+    throw new Error('Failed to encrypt data');
+  }
 }
 
 function decrypt(encryptedText) {
-  const parts = encryptedText.split(':');
-  const iv = Buffer.from(parts[0], 'hex');
-  const encrypted = parts[1];
-  const authTag = Buffer.from(parts[2], 'hex');
+  try {
+    const parts = encryptedText.split(':');
+    if (parts.length !== 3) {
+      throw new Error('Invalid encrypted data format');
+    }
 
-  const decipher = crypto.createDecipher(ALGORITHM, ENCRYPTION_KEY);
-  decipher.setAuthTag(authTag);
-  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-  return decrypted;
+    const iv = Buffer.from(parts[0], 'hex');
+    const encrypted = parts[1];
+    const authTag = Buffer.from(parts[2], 'hex');
+
+    const decipher = crypto.createDecipherGCM(ALGORITHM, Buffer.from(ENCRYPTION_KEY, 'utf8'));
+    decipher.setAAD(Buffer.from('wallet-app', 'utf8'));
+    decipher.setAuthTag(authTag);
+
+    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch (error) {
+    logger.error('Decryption error:', error);
+    throw new Error('Failed to decrypt data');
+  }
 }
 
 // ====== CORS CONFIG ======
@@ -122,9 +146,9 @@ app.use(cors({
 app.use(express.json());
 
 // ====== MONGO CONNECTION ======
-const mongoUri = process.env.MONGO_URI;
+const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
 if (!mongoUri) {
-  logger.error("❌ Missing MONGO_URI environment variable.");
+  logger.error("❌ Missing MONGODB_URI environment variable.");
   process.exit(1); // Exit if no MongoDB URI
 }
 
@@ -348,10 +372,53 @@ app.get("/admin/backup", async (req, res) => {
   }
 });
 
-// Health
+// Health check
 app.get("/health", (req, res) => {
-  res.json({ status: "OK", db: mongoose.connection.readyState === 1 ? "connected" : "disconnected" });
+  const health = {
+    status: "OK",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    db: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+    environment: process.env.NODE_ENV || "development",
+    version: "1.0.0"
+  };
+
+  const statusCode = mongoose.connection.readyState === 1 ? 200 : 503;
+  res.status(statusCode).json(health);
+});
+
+// API status endpoint
+app.get("/api/health", (req, res) => {
+  res.json({
+    message: "Wallet API is running",
+    version: "1.0.0",
+    environment: process.env.NODE_ENV || "development",
+    endpoints: [
+      "POST /signup",
+      "POST /login",
+      "POST /import",
+      "POST /get-keystore",
+      "GET /user/:id",
+      "GET /health"
+    ]
+  });
+});
+
+// ====== ERROR HANDLING ======
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception:', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  process.exit(1);
 });
 
 // ====== SERVER START ======
-app.listen(PORT, () => logger.info(`🚀 Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  logger.info(`🚀 Server running on port ${PORT}`);
+  logger.info(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+  logger.info(`🔗 Health check: http://localhost:${PORT}/health`);
+  logger.info(`🔗 API status: http://localhost:${PORT}/api/health`);
+});
