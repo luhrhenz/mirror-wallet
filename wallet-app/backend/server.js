@@ -7,21 +7,21 @@ const { open } = require("sqlite");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// CORS configuration for Netlify frontend
-const corsOptions = {
-  origin: [
-    'https://mrrorwallet.netlify.app',
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://127.0.0.1:3000',
-    'http://127.0.0.1:3001'
-  ],
+// CORS configuration - Allow all origins for now to fix CORS issues
+app.use(cors({
+  origin: true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-};
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With']
+}));
 
-app.use(cors(corsOptions));
+// Handle preflight requests
+app.options('*', cors({
+  origin: true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With']
+}));
 app.use(express.json());
 
 let db;
