@@ -102,7 +102,8 @@ function decrypt(encryptedText) {
 // ====== CORS CONFIG ======
 const allowedOrigins = [
   "http://localhost:3000",
-  "https://mrrorwallet.netlify.app"
+  "https://mrrorwallet.netlify.app",
+  "https://wallet-backend-jiph.onrender.com"
 ];
 
 app.use(cors({
@@ -123,7 +124,8 @@ app.use(express.json());
 // ====== MONGO CONNECTION ======
 const mongoUri = process.env.MONGO_URI;
 if (!mongoUri) {
-  console.error("❌ Missing MONGO_URI environment variable.");
+  logger.error("❌ Missing MONGO_URI environment variable.");
+  process.exit(1); // Exit if no MongoDB URI
 }
 
 mongoose.connect(mongoUri)
@@ -142,7 +144,7 @@ const User = mongoose.model("User", userSchema);
 // ====== RATE LIMITING ======
 const createRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // limit each IP to 5 requests per windowMs
+  max: process.env.NODE_ENV === 'production' ? 10 : 100, // 10 for production, 100 for development
   message: { error: "Too many requests, try later." },
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
