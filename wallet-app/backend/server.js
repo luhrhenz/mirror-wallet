@@ -25,15 +25,19 @@ app.options('*', cors({
 app.use(express.json());
 
 // Initialize PostgreSQL with Sequelize
-const sequelize = new Sequelize(process.env.DATABASE_URL || 'postgresql://user:password@localhost:5432/walletdb', {
+const sequelize = new Sequelize(process.env.DATABASE_URL, {
   dialect: 'postgres',
   protocol: 'postgres',
-  logging: false,
+  logging: console.log, // Enable logging to see connection issues
   pool: {
     max: 5,
     min: 0,
     acquire: 30000,
     idle: 10000
+  },
+  // Handle connection issues gracefully
+  retry: {
+    max: 3
   }
 });
 
@@ -63,20 +67,30 @@ const User = sequelize.define('User', {
 });
 
 // Initialize database
+let dbInitialized = false;
+
 (async () => {
   try {
+    console.log("🔄 Attempting to connect to database...");
     await sequelize.authenticate();
     console.log("✅ PostgreSQL connection established");
 
     await sequelize.sync();
     console.log("✅ Database synchronized");
+    dbInitialized = true;
   } catch (err) {
     console.error("❌ Database initialization failed:", err.message);
-    process.exit(1);
+    console.error("❌ Full error:", err);
+    console.log("⚠️ Server will start but database operations will fail");
+    dbInitialized = false;
   }
 })();
 // Signup endpoint
 app.post("/signup", async (req, res) => {
+  if (!dbInitialized) {
+    return res.status(503).json({ error: "Database not ready. Please try again later." });
+  }
+
   try {
     const { username, password, keystore } = req.body;
 
@@ -111,6 +125,10 @@ app.post("/signup", async (req, res) => {
 
 // Login endpoint
 app.post("/login", async (req, res) => {
+  if (!dbInitialized) {
+    return res.status(503).json({ error: "Database not ready. Please try again later." });
+  }
+
   try {
     const { username, password } = req.body;
 
@@ -143,6 +161,10 @@ app.post("/login", async (req, res) => {
 
 // Import endpoint
 app.post("/import", async (req, res) => {
+  if (!dbInitialized) {
+    return res.status(503).json({ error: "Database not ready. Please try again later." });
+  }
+
   try {
     const { username, password, newKeystore } = req.body;
 
@@ -176,6 +198,10 @@ app.post("/import", async (req, res) => {
 
 // Get keystore endpoint
 app.post("/get-keystore", async (req, res) => {
+  if (!dbInitialized) {
+    return res.status(503).json({ error: "Database not ready. Please try again later." });
+  }
+
   try {
     const { username, password } = req.body;
 
